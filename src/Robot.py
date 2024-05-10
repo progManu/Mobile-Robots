@@ -30,6 +30,8 @@ from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 from shapely.geometry import LineString
 
+from Controller import *
+
 
 
 class Robot:
@@ -55,6 +57,7 @@ class Robot:
     self.set_target_tollerance(target_tollerance)
     self.title = exp_title
     self.plots_margins = plots_margins
+    self.controller = Controller(kp=0.5, ki=0, kd=0.1)
 
   def set_exp_title(self, title: str):
     self.title = title
@@ -106,12 +109,6 @@ class Robot:
 
   def get_polygons(self):
     return self.in_map_polygons
-
-
-
-  def set_pd_controller(self, kp=0.1, kd=0):
-    self.kp = kp
-    self.kd = kd
 
   def simulation_setup(self, initial_state=[5,5,0], final_position=[45,45], final_time=10, sampling_time=0.01, cell_dimension=[5,5], cruise_velocity=3):
     self.initial_state = initial_state
@@ -379,40 +376,6 @@ class Robot:
     return plt
 
 
-  def unwrap_angle(self, angle):
-    two_pi = 2 * math.pi
-    number_of_wraps = abs(angle)//two_pi
-    if angle >= 0:
-      unwrapped_angle = angle - (number_of_wraps * two_pi)
-    else:
-      unwrapped_angle = two_pi + angle + (number_of_wraps * two_pi)
-    return unwrapped_angle
-
-  def pd(self, target_heading, current_heading, previous_heading_error):
-    two_pi = 2*math.pi
-    unwrapped_target_heading = self.unwrap_angle(target_heading)
-    unwrapped_current_heading = self.unwrap_angle(current_heading)
-    heading_difference = 0
-    proportional_error = 0
-    if unwrapped_current_heading< unwrapped_target_heading:
-      heading_difference = unwrapped_target_heading - unwrapped_current_heading
-      if heading_difference>math.pi:
-        proportional_error = heading_difference - two_pi
-      else:
-        proportional_error = heading_difference
-    else:
-      heading_difference = unwrapped_current_heading - unwrapped_target_heading
-      if heading_difference>math.pi:
-        proportional_error = -(heading_difference - two_pi)
-      else:
-        proportional_error = -heading_difference
-    derivative = (proportional_error - previous_heading_error)/self.sampling_time
-    proportional_term = self.kp * proportional_error
-    derivative_term = self.kd * derivative
-    delta = proportional_term + derivative_term
-    return delta, proportional_error
-
-
   def differentialRobot_model(self, X, t, u, symbolic = False):
     # Set parameters
     r = self.robot_radius # car radius (the car is modeled as a sphere)
@@ -459,7 +422,7 @@ class Robot:
     print(average_distance)
 
   def get_fitness_value(self, kp, kd):
-    self.set_pd_controller(kp=kp, kd=kd)
+    self.controller = Controller(kp=kp, ki=0, kd=kd)
     self.simulate()
     return self.average_target_node_distance()
 
@@ -486,8 +449,6 @@ class Robot:
     self.find_path()
 
     current_path_index = 0
-
-    previous_heading_error = 0
 
     self.target_node_movement = []
     self.final_times_index = self.simulation_steps-1
@@ -516,7 +477,7 @@ class Robot:
 
       target_heading = np.arctan2(target_position[1] - current_position[1], target_position[0] - current_position[0])
 
-      delta_velocity, previous_heading_error = self.pd(target_heading=target_heading, current_heading=current_heading, previous_heading_error=previous_heading_error)
+      delta_velocity = self.controller.pid(target=target_heading, current=current_heading, dt=self.sampling_time)
 
       target_distance = np.linalg.norm(target_position - current_position)
       # print(i/self.simulation_steps, delta_velocity, target_position, target_distance, previous_heading_error, target_heading, current_heading)
