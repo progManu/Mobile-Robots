@@ -31,3 +31,25 @@ class Controller:
         self.prev_error = error
 
         return delta
+    
+    def advanced_control(self, target, current, dt, cruise_velicity):
+        target_wrap = wrap_angle(target)
+        current_wrap = wrap_angle(current)
+
+        error = target_wrap - current_wrap
+        error = np.arctan2(np.sin(error), np.cos(error))    # basically does the same as the old if stuff
+
+        delta = 0
+
+        if abs(error) > np.pi/8:
+            if np.sign(error) > 0:
+                return (0, -2*cruise_velicity)
+            else:
+                return (-2*cruise_velicity, 0)
+        else:
+            delta = self.pid(target, current, dt)
+
+        return (delta, -delta)
+    
+
+        

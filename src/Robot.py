@@ -477,13 +477,16 @@ class Robot:
 
       target_heading = np.arctan2(target_position[1] - current_position[1], target_position[0] - current_position[0])
 
-      delta_velocity = self.controller.pid(target=target_heading, current=current_heading, dt=self.sampling_time)
+      # delta_velocity = self.controller.pid(target=target_heading, current=current_heading, dt=self.sampling_time)
+      delta_velocity = self.controller.advanced_control(target=target_heading, current=current_heading, dt=self.sampling_time, cruise_velicity=self.cruise_velocity)
 
       target_distance = np.linalg.norm(target_position - current_position)
       # print(i/self.simulation_steps, delta_velocity, target_position, target_distance, previous_heading_error, target_heading, current_heading)
 
       # Compute the current input
-      current_input = [self.cruise_velocity+delta_velocity, self.cruise_velocity-delta_velocity]
+
+      # current_input = [self.cruise_velocity+delta_velocity, self.cruise_velocity-delta_velocity]
+      current_input = [self.cruise_velocity+delta_velocity[0], self.cruise_velocity+delta_velocity[1]]
       self.u_sequence[i] = current_input
 
       # Define the time step associated to the current input
