@@ -30,7 +30,7 @@ from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 from shapely.geometry import LineString
 
-from Controller import *
+from src.Controller import *
 
 
 
