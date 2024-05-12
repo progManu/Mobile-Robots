@@ -3,9 +3,14 @@ from shapely.geometry import LineString
 
 class ObstacleAvoidance:
 
-    def __init__(self, lidar, safety_distance):
+    def __init__(self, lidar, safety_distance=9, critical_distance = 1.1, k=1):
         self.lidar = lidar
         self.safety_distance = safety_distance
+        self.k = k
+        self.critical_distance = critical_distance
+
+        if(safety_distance > self.lidar.reach):
+            print('Warning: safety distance is greater than the LiDAR reach')
 
         if self.lidar.n % 2 == 0:
             raise ValueError('LiDAR number of rays must be odd')
@@ -45,11 +50,38 @@ class ObstacleAvoidance:
         else:
             return 'Left'
         
-    def check_for_close_obstacles(self, robot_position): #returns True if there are obstacles closer than the security distance
+    def check_close_obstacles(self, robot_position): #returns True if there are obstacles closer than the security distance
         measurements = self.lidar.measure(robot_position) #scan the environment
-
+        
+        list_dict = []
         for key in measurements:
-            if measurements[key][0] < self.safety_distance:
-                return True
-            
-        return False
+            measurement = measurements[key][0]
+            if measurement is None: measurement = self.lidar.reach
+            list_dict.append([key, measurement])
+
+        minimum_distance = min(list_dict, key=lambda x: x[1])[1]
+        if minimum_distance < self.safety_distance:
+            return True, minimum_distance
+        else: return False, minimum_distance
+
+    def compute_contribution(self, distance, robot_position):
+        direction = self.select_direction(robot_position)
+        contribution = self.k * 1/distance
+
+        if direction == 'Left':
+            return (-contribution, +contribution)
+        else: return (+contribution, -contribution)
+
+    def distance_is_critical(self, robot_position):
+        measurements = self.lidar.measure(robot_position) #scan the environment
+        
+        list_dict = []
+        for key in measurements:
+            measurement = measurements[key][0]
+            if measurement is None: measurement = self.lidar.reach
+            list_dict.append([key, measurement])
+
+        minimum_distance = min(list_dict, key=lambda x: x[1])[1]
+        if minimum_distance < self.critical_distance:
+            return True
+        else: return False

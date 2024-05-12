@@ -31,6 +31,8 @@ from shapely.geometry.polygon import Polygon
 from shapely.geometry import LineString
 
 from src.Controller import *
+from src.ObstacleAvoidance import *
+from src.LiDAR import *
 
 
 
@@ -42,7 +44,8 @@ class Robot:
 
 
   def __init__(self, robot_radius=1, wheels_distance=0.8, map_dimensions=[50,50], epsilon_collisions = 0.1,
-               target_tollerance = 2, in_map_obstacle_vertexes_list=[], exp_title="NoName", plots_margins = 10):
+               target_tollerance = 2, in_map_obstacle_vertexes_list=[], exp_title="NoName", plots_margins = 10, 
+               safety_distance = 2, lidar_angle_interval=[0, 2*math.pi], lidar_n=9, lidar_reach=10):
     """
     Initialize the robot.
 
@@ -58,6 +61,9 @@ class Robot:
     self.title = exp_title
     self.plots_margins = plots_margins
     self.controller = Controller(kp=0.5, ki=0, kd=0.1)
+
+    lidar = LiDAR(angle_interval=[0, 2*math.pi], obstacles=self.in_map_obstacles_segments, n=lidar_n, reach=lidar_reach)
+    self.obstacle_avoidance = ObstacleAvoidance(safety_distance=safety_distance, lidar=lidar, k=10)
 
   def set_exp_title(self, title: str):
     self.title = title
@@ -483,10 +489,24 @@ class Robot:
       target_distance = np.linalg.norm(target_position - current_position)
       # print(i/self.simulation_steps, delta_velocity, target_position, target_distance, previous_heading_error, target_heading, current_heading)
 
+      # Obstacle avoidance contribution
+      obstacle_avoidance_delta = (0,0)
+      obstacle_detected, obstacle_distance = self.obstacle_avoidance.check_close_obstacles(self.x_movement[i][:2])
+      if obstacle_detected:
+        obstacle_avoidance_delta = self.obstacle_avoidance.compute_contribution(obstacle_distance, self.x_movement[i][:2])
+
+
       # Compute the current input
 
       # current_input = [self.cruise_velocity+delta_velocity, self.cruise_velocity-delta_velocity]
-      current_input = [self.cruise_velocity+delta_velocity[0], self.cruise_velocity+delta_velocity[1]]
+      current_input = [self.cruise_velocity+delta_velocity[0]+obstacle_avoidance_delta[0], self.cruise_velocity+delta_velocity[1]+obstacle_avoidance_delta[1]]
+      print(current_input)
+
+      # Check if the robot is too close to maneuver, stop to avoid collisions
+      if self.obstacle_avoidance.distance_is_critical(self.x_movement[i][:2]):
+        current_input = [0,0]
+        print('Robot too close to an obstacle!')
+      
       self.u_sequence[i] = current_input
 
       # Define the time step associated to the current input

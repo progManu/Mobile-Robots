@@ -3,7 +3,7 @@ import numpy as np
 from shapely.geometry import LineString
 
 class LiDAR:
-    def __init__(self, angle_interval=[0, 2*math.pi], obstacles=[], n=10, reach=10):
+    def __init__(self, angle_interval=[0, 2*math.pi], obstacles=[], n=9, reach=10):
         self.angle_interval = angle_interval
         self.obstacles = obstacles
         self.n = n
