@@ -249,7 +249,7 @@ class Robot:
         edges = []
         for node in nodes:
             for end_node in self.graph[node]:
-                edges.append((node, end_node))
+                edges.append((node, end_node, math.dist(node, end_node)))
 
         return nodes, edges
 
@@ -257,7 +257,7 @@ class Robot:
         nodes, edges = self.get_nodes_and_edges()
         graphG = nx.Graph()
         graphG.add_nodes_from(nodes)
-        graphG.add_edges_from(edges)
+        graphG.add_weighted_edges_from(edges)
         nearest_node_distance = 10 ** 10
         initial_node = (0, 0)
         for key in self.graph:
@@ -265,7 +265,7 @@ class Robot:
             if current_distance < nearest_node_distance:
                 nearest_node_distance = current_distance
                 initial_node = key
-        shortest_path = nx.shortest_path(graphG, source=initial_node, target=tuple(self.final_position))
+        shortest_path = nx.shortest_path(graphG, source=initial_node, target=tuple(self.final_position), weight='weight')
         self.nodes_path = shortest_path
 
     def plots(self):
