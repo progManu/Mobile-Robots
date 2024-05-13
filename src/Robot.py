@@ -36,24 +36,6 @@ class Robot:
         self.x_movement = None
         self.final_times_index = None
         self.nodes_path = None
-        if in_map_obstacle_vertexes_list is None:
-            in_map_obstacle_vertexes_list = []
-        if map_dimensions is None:
-            map_dimensions = [50, 50]
-        self.set_robot_radius(robot_radius)
-        self.set_wheels_distance(wheels_distance)
-        self.set_map_dimensions(map_dimensions)
-        self.set_in_map_obstacles(in_map_obstacle_vertexes_list)
-        self.set_epsilon_collisions(epsilon_collisions)
-        self.set_target_tolerance(target_tolerance)
-        self.title = exp_title
-        self.plots_margins = plots_margins
-        self.controller = Controller(kp=0.5, ki=0, kd=0.1)
-
-        lidar = LiDAR(angle_interval=[0, 2 * math.pi], obstacles=self.in_map_obstacles_segments, n=lidar_n,
-                      reach=lidar_reach)
-        self.obstacle_avoidance = ObstacleAvoidance(safety_distance=safety_distance, lidar=lidar, k=10)
-
         self.cruise_velocity = None
         self.times = None
         self.simulation_steps = None
@@ -78,6 +60,23 @@ class Robot:
         self.graph_nodes = None
         self.animation = None
         self.graph = None
+        if in_map_obstacle_vertexes_list is None:
+            in_map_obstacle_vertexes_list = []
+        if map_dimensions is None:
+            map_dimensions = [50, 50]
+
+        self.set_robot_radius(robot_radius)
+        self.set_wheels_distance(wheels_distance)
+        self.set_map_dimensions(map_dimensions)
+        self.set_in_map_obstacles(in_map_obstacle_vertexes_list)
+        self.set_epsilon_collisions(epsilon_collisions)
+        self.set_target_tolerance(target_tolerance)
+        self.title = exp_title
+        self.plots_margins = plots_margins
+        self.controller = Controller(kp=0.5, ki=0, kd=0.1)
+        lidar = LiDAR(angle_interval=[0, 2 * math.pi], obstacles=self.in_map_obstacles_segments, n=lidar_n,
+                      reach=lidar_reach)
+        self.obstacle_avoidance = ObstacleAvoidance(safety_distance=safety_distance, lidar=lidar, k=10)
 
     def set_exp_title(self, title: str):
         self.title = title
@@ -445,7 +444,7 @@ class Robot:
 
             delta_velocity = self.controller.advanced_control(target=target_heading, current=current_heading,
                                                               dt=self.sampling_time,
-                                                              cruise_velicity=self.cruise_velocity)
+                                                              cruise_velocity=self.cruise_velocity)
 
             # Obstacle avoidance contribution
             obstacle_avoidance_delta = (0, 0)
