@@ -1,7 +1,7 @@
 import math
 import numpy as np
 from shapely.geometry import LineString
-
+import concurrent.futures
 
 class LiDAR:
     def __init__(self, angle_interval=None, obstacles=None, n=9, reach=10):
@@ -46,11 +46,13 @@ class LiDAR:
         else:  # Else return the measured distance and the intersection point
             return measured_distance, intersection_point
 
-    def measure(self, position):  # Repeat the measure at different angles
+    def measure(self, position, heading_angle):  # Repeat the measure at different angles
+        # Added heading_angle to the measure function to allow the LiDAR to rotate with the robot
         if self.n <= 0:
             raise ValueError('The number of rays must be positive')
 
-        angles = np.linspace(self.angle_interval[0], self.angle_interval[1], self.n + 1)
+        angles = np.linspace(heading_angle + self.angle_interval[0], heading_angle + self.angle_interval[1], self.n + 1)
+
         measurements = {}
 
         for angle in angles:
@@ -58,3 +60,29 @@ class LiDAR:
             measurements[angle] = (measurement, intersection_point)
 
         return measurements
+
+    # Multithreaded version of the measure function, it seems to be slower than the sequential version...
+    # def measure(self, position, heading_angle):
+    #    if self.n <= 0:
+    #        raise ValueError('The number of rays must be positive')
+
+    #    angles = np.linspace(self.angle_interval[0]+heading_angle, self.angle_interval[1]+heading_angle, self.n + 1)
+
+    #    measurements = {}
+
+    #    # Function to measure at a specific angle
+    #    def measure_at_angle(angle):
+    #        return self.measure_at_angle(angle, position)
+
+    #    # Perform lidar measurements in parallel
+    #    with concurrent.futures.ThreadPoolExecutor() as executor:
+    #        futures = {executor.submit(measure_at_angle, angle): angle for angle in angles}
+    #        for future in concurrent.futures.as_completed(futures):
+    #            angle = futures[future]
+    #            try:
+    #                measurement, intersection_point = future.result()
+    #                measurements[angle] = (measurement, intersection_point)
+    #            except Exception as exc:
+    #                print(f"Measurement at angle {angle} generated an exception: {exc}")
+
+    #    return measurements

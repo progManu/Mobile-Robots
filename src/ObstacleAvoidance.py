@@ -15,9 +15,9 @@ class ObstacleAvoidance:
         if self.lidar.n % 2 == 0:
             raise ValueError('LiDAR number of rays must be odd')
 
-    def select_direction(self, robot_position):  # Returns the preferred side: 'Left' or 'Right'
+    def select_direction(self, robot_position, robot_heading_angle):  # Returns the preferred side: 'Left' or 'Right'
 
-        measurements = self.lidar.measure(robot_position)  # Scan the environment
+        measurements = self.lidar.measure(robot_position, robot_heading_angle)  # Scan the environment
         central_index = math.floor(len(measurements) / 2)  # Find central measurement
 
         partial_sums = {'right': 0, 'left': 0}
@@ -50,8 +50,8 @@ class ObstacleAvoidance:
             return 'Left'
 
     def check_close_obstacles(self,
-                              robot_position):  # Returns True if there are obstacles closer than the security distance
-        measurements = self.lidar.measure(robot_position)  # Scan the environment
+                              robot_state):  # Returns True if there are obstacles closer than the security distance
+        measurements = self.lidar.measure(robot_state[:2], robot_state[2])  # Scan the environment
 
         list_dict = []
         for key in measurements:
@@ -65,8 +65,10 @@ class ObstacleAvoidance:
         else:
             return False, minimum_distance
 
-    def compute_contribution(self, distance, robot_position):
-        direction = self.select_direction(robot_position)
+    def compute_contribution(self, distance, robot_state):
+        robot_position = robot_state[0:2]
+        robot_heading_angle = robot_state[2]
+        direction = self.select_direction(robot_position, robot_heading_angle)
         contribution = self.k * 1 / distance
 
         if direction == 'Left':
@@ -74,8 +76,10 @@ class ObstacleAvoidance:
         else:
             return +contribution, -contribution
 
-    def distance_is_critical(self, robot_position):
-        measurements = self.lidar.measure(robot_position)  #scan the environment
+    def distance_is_critical(self, robot_state):
+        robot_position = robot_state[0:2]
+        robot_heading_angle = robot_state[2]
+        measurements = self.lidar.measure(robot_position, robot_heading_angle)  #scan the environment
 
         list_dict = []
         for key in measurements:

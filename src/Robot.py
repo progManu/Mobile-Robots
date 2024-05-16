@@ -14,6 +14,7 @@ from src.Controller import *
 from src.ObstacleAvoidance import *
 from src.LiDAR import *
 import src.Utilities as Utilities
+from src.OccupancyGrid import OccupancyGrid
 
 
 class Robot:
@@ -23,7 +24,7 @@ class Robot:
 
     def __init__(self, robot_radius=1, wheels_distance=0.8, map_dimensions=None, epsilon_collisions=0.1,
                  target_tolerance=2, in_map_obstacle_vertexes_list=None, exp_title="NoName", plots_margins=10,
-                 safety_distance=2, lidar_n=9, lidar_reach=10):
+                 safety_distance=2, lidar_n=9, lidar_reach=10, cell_dim=1):
         """
         Initialize the robot.
 
@@ -60,6 +61,7 @@ class Robot:
         self.graph_nodes = None
         self.animation = None
         self.graph = None
+        self.occupancy_grid = None
         if in_map_obstacle_vertexes_list is None:
             in_map_obstacle_vertexes_list = []
         if map_dimensions is None:
@@ -74,8 +76,8 @@ class Robot:
         self.title = exp_title
         self.plots_margins = plots_margins
         self.controller = Controller(kp=0.5, ki=0, kd=0.1)
-        lidar = LiDAR(angle_interval=[0, 2 * math.pi], obstacles=self.in_map_obstacles_segments, n=lidar_n,
-                      reach=lidar_reach)
+        lidar = LiDAR(angle_interval=[0, 2 * math.pi],
+                      obstacles=self.in_map_obstacles_segments+self.map_border_segments, n=lidar_n, reach=lidar_reach)
         self.obstacle_avoidance = ObstacleAvoidance(safety_distance=safety_distance, lidar=lidar, k=10)
 
     def set_exp_title(self, title: str):
@@ -265,7 +267,8 @@ class Robot:
             if current_distance < nearest_node_distance:
                 nearest_node_distance = current_distance
                 initial_node = key
-        shortest_path = nx.shortest_path(graphG, source=initial_node, target=tuple(self.final_position), weight='weight')
+        shortest_path = nx.shortest_path(graphG, source=initial_node, target=tuple(self.final_position),
+                                         weight='weight')
         self.nodes_path = shortest_path
 
     def plots(self):
@@ -400,13 +403,15 @@ class Robot:
         return self.average_target_node_distance()
 
     def simulator(self):
-
         state_dim = len(self.initial_state)
         input_dim = 2
 
         # Init the matrix that will contain the state movement
         self.x_movement = np.full((self.simulation_steps + 1, state_dim), np.nan)
         self.x_movement[0] = self.initial_state  # The first row of the matrix represents the initial conditions
+
+        self.occupancy_grid = OccupancyGrid(cell_dim=1, initial_state=self.initial_state,
+                                            lidar=self.obstacle_avoidance.lidar)
 
         # Init an array that will contain the input sequence
         self.u_sequence = np.full((self.simulation_steps, input_dim), np.nan)
@@ -419,6 +424,8 @@ class Robot:
         self.target_node_movement = []
         self.final_times_index = self.simulation_steps - 1
 
+        self.occupancy_grid.set_grid()
+
         # Iterate over the number of steps
         for i in range(self.simulation_steps):
 
@@ -427,6 +434,8 @@ class Robot:
             current_position = self.state[:2]
             current_heading = self.state[2]
             target_position = self.nodes_path[current_path_index]
+
+            self.occupancy_grid.update_grid(self.state)
 
             target_distance = np.linalg.norm(target_position - current_position)
             if target_distance < self.target_tolerance:
@@ -448,17 +457,17 @@ class Robot:
 
             # Obstacle avoidance contribution
             obstacle_avoidance_delta = (0, 0)
-            obstacle_detected, obstacle_distance = self.obstacle_avoidance.check_close_obstacles(self.x_movement[i][:2])
+            obstacle_detected, obstacle_distance = self.obstacle_avoidance.check_close_obstacles(self.x_movement[i])
             if obstacle_detected:
                 obstacle_avoidance_delta = self.obstacle_avoidance.compute_contribution(obstacle_distance,
-                                                                                        self.x_movement[i][:2])
+                                                                                        self.x_movement[i])
 
             # Compute the current input
             current_input = [self.cruise_velocity + delta_velocity[0] + obstacle_avoidance_delta[0],
                              self.cruise_velocity + delta_velocity[1] + obstacle_avoidance_delta[1]]
 
             # Check if the robot is too close to maneuver, stop to avoid collisions
-            if self.obstacle_avoidance.distance_is_critical(self.x_movement[i][:2]):
+            if self.obstacle_avoidance.distance_is_critical(self.x_movement[i]):
                 current_input = [0, 0]
                 print('Robot too close to an obstacle!')
 
