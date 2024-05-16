@@ -150,9 +150,9 @@ class Robot:
         self.make_animation()
         return self.animation
 
-    def save_animation(self, dpi=100):
+    def save_animation(self, fileName, dpi=100):
         self.make_animation()
-        self.animation.save(filename=self.title + ".mkv", writer="ffmpeg", dpi=dpi)
+        self.animation.save(filename=fileName + ".mkv", writer="ffmpeg", dpi=dpi)
 
     def show_plots(self):
         self.plots().show()
