@@ -66,3 +66,14 @@ def polygons_to_segments(polygons):
         return segments
     else:
         return segments
+
+
+def get_nearest_node(graph, position):
+    min_distance = 100**100
+    nearest_node = None
+    for node in graph:
+        distance = distance_point_point(node, position)
+        if distance < min_distance:
+            min_distance = distance
+            nearest_node = node
+    return nearest_node
