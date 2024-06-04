@@ -19,9 +19,9 @@ def get_code_meaning(code):
 
 
 class OccupancyGrid:
-    def __init__(self, lidar, cell_dim, initial_state, node_distance_in_cells):
+    def __init__(self, lidar, cell_dim, initial_state, nodes_distance_in_cells, minimum_distance_nodes_obstacles):
         ###############################################
-        # node_distance_in_cells is expressed in cell_dim times
+        # nodes_distance_in_cells is expressed in cell_dim times
         ###############################################
         self.initial_position = initial_state[0:2]
         self.position = self.initial_position
@@ -34,11 +34,14 @@ class OccupancyGrid:
         self.set_grid()
         self.update_grid(initial_state)
 
-        self.number_nodes_margin = math.floor(-self.number_cells_margin / self.node_distance)
         self.graph_nodes = {}
         self.graph = {}
-        self.node_distance = node_distance_in_cells * self.cell_dim
-
+        self.nodes_distance_in_cells = nodes_distance_in_cells
+        self.minimum_distance_nodes_obstacles = minimum_distance_nodes_obstacles
+        self.number_nodes_margin = math.floor(self.number_cells_margin / self.nodes_distance_in_cells)
+        self.nodes_distance = self.nodes_distance_in_cells * self.cell_dim
+        self.set_graph_nodes()
+        self.update_graph(initial_state)
 
     #######################################################
     # NB: Each cell is represented by its down-left corner
@@ -59,8 +62,8 @@ class OccupancyGrid:
         initial_cell = self.get_grid_position(self.initial_position)
         for i in range(-self.number_nodes_margin, self.number_nodes_margin + 1):
             for j in range(-self.number_nodes_margin, self.number_nodes_margin + 1):
-                x = initial_cell[0] + i * self.node_distance
-                y = initial_cell[1] + j * self.node_distance
+                x = initial_cell[0] + i * self.nodes_distance
+                y = initial_cell[1] + j * self.nodes_distance
                 self.graph_nodes[(x, y)] = 0
 
     def enlarge_grid_if_needed(self):
@@ -73,11 +76,12 @@ class OccupancyGrid:
                     self.grid[(x, y)] = 0
 
     def enlarge_graph_nodes_if_needed(self):
-        position_cell = self.get_grid_position(self.position)
+        nearest_node = Utilities.get_nearest_node(self.graph_nodes, self.position)
+
         for i in range(-self.number_nodes_margin, self.number_nodes_margin + 1):
             for j in range(-self.number_nodes_margin, self.number_nodes_margin + 1):
-                x = position_cell[0] + i * self.node_distance
-                y = position_cell[1] + j * self.node_distance
+                x = nearest_node[0] + i * self.nodes_distance
+                y = nearest_node[1] + j * self.nodes_distance
                 if (x, y) not in self.graph_nodes:
                     self.graph_nodes[(x, y)] = 0
 
@@ -123,6 +127,33 @@ class OccupancyGrid:
             if self.grid[point_cell] != -1:
                 self.grid[point_cell] = 2
 
+    def get_cells_line_connecting_points(self, point_1, point_2):
+        sampling_rate = 2 / self.cell_dim
+
+        delta_x = point_2[0] - point_1[0]
+        delta_y = point_2[1] - point_1[1]
+
+        abs_delta_x = np.abs(delta_x)
+        abs_delta_y = np.abs(delta_y)
+
+        if abs_delta_x > abs_delta_y:
+            number_of_steps = math.ceil(sampling_rate * abs_delta_x)
+        else:
+            number_of_steps = math.ceil(sampling_rate * abs_delta_y)
+
+        x_step = delta_x / number_of_steps
+        y_step = delta_y / number_of_steps
+        segment_sampling = [(point_1[0] + i * x_step, point_1[1] + i * y_step)
+                            for i in range(1, number_of_steps)]
+
+        line_cells = []
+        for point in segment_sampling:
+            point_cell = self.get_grid_position(point)
+            if point_cell not in line_cells:
+                line_cells.append(point_cell)
+
+        return line_cells
+
     def update_grid(self, robot_current_state):
         self.position = robot_current_state[0:2]
         self.heading_angle = robot_current_state[2]
@@ -137,52 +168,44 @@ class OccupancyGrid:
                 lidar_measurement = self.lidar.reach
             self.mark_cells_from_measurement(lidar_intersection_point, lidar_measurement)
 
-    def check_node(self, node, minimum_distance):
+    def check_node(self, node):
 
-        number_of_cells = math.floor(minimum_distance / self.cell_dim)
+        number_of_cells = math.floor(self.minimum_distance_nodes_obstacles / self.cell_dim)
 
         central_cell_coordinates = self.get_grid_position(node)
         neighborhood = [
-            (central_cell_coordinates[0] + i * self.cell_dim, central_cell_coordinates[1] + j * self.cell_dim)
+            (central_cell_coordinates[0] + i * self.nodes_distance,
+             central_cell_coordinates[1] + j * self.nodes_distance)
             for i in range(-number_of_cells, number_of_cells + 1) for j in range(-number_of_cells, number_of_cells + 1)]
-
         node_value = 2
         for cell in neighborhood:
-            if self.grid[cell] != -1:
-                return -1
-            elif self.grid[cell] != 2:
-                node_value = self.grid[cell]
+            if cell in self.graph_nodes:
+                if self.graph_nodes[cell] == -1:
+                    return -1
+                elif self.graph_nodes[cell] == 1:
+                    node_value = 1
+
+        if node_value == 2:
+            for cell in neighborhood:
+                if cell in self.graph_nodes:
+                    if self.graph_nodes[cell] == 0:
+                        return 0
 
         return node_value
 
-    def check_edge(self, node1, node2, minimum_distance):
+    def check_edge(self, node1, node2):
 
-        line = LineString([node1, node2])
-        rect = line.buffer(minimum_distance)
+        n_cells_to_check = math.ceil(self.minimum_distance_nodes_obstacles / self.cell_dim)
 
-        node_1_cell = self.get_grid_position(node1)
-        node2_cell = self.get_grid_position(node2)
+        cells_line_connecting_nodes = self.get_cells_line_connecting_points(node1, node2)
 
-        dl_corner = min(node_1_cell[0], node2_cell[0]), min(node_1_cell[1], node2_cell[1])
-        dl_corner = dl_corner[0] - self.cell_dim, dl_corner[1] - self.cell_dim
-        ur_corner = max(node_1_cell[0], node2_cell[0]), max(node_1_cell[1], node2_cell[1])
-        ur_corner = ur_corner[0] + self.cell_dim, ur_corner[1] + self.cell_dim
-
-        cells = []
-
-        for x_coordinate in range(dl_corner[0], ur_corner[0], self.cell_dim):
-            for y_coordinate in range(dl_corner[1], ur_corner[1], self.cell_dim):
-                cells.append((x_coordinate, y_coordinate))
-
-        polygons = []
-        for cell in cells:
-            polygon = self.get_polygon_from_cell(cell)
-            polygons.append(polygon)
-
-        for polygon in polygons:
-            if rect.intersects(polygon) or rect.contains(polygon):
-                polygon_coords = list(polygon.exterior.coords)[0]
-                if self.grid[polygon_coords] != 2:
+        for cell in cells_line_connecting_nodes:
+            for i in range(-n_cells_to_check, n_cells_to_check + 1):
+                cell_to_check = cell[0] + i * self.cell_dim, cell[1]
+                if (self.get_grid_position(cell_to_check)) in self.grid:
+                    if self.grid[(cell[0] + i * self.cell_dim, cell[1])] != 2:
+                        return False
+                else:
                     return False
 
         return True
@@ -204,7 +227,7 @@ class OccupancyGrid:
             if self.graph_nodes[neighbor] != 2 or neighbor == node:
                 continue
             distance = Utilities.distance_point_point(node, neighbor)
-            if distance <= self.node_distance * math.sqrt(2):
+            if distance <= self.nodes_distance * math.sqrt(2):
                 neighbors.append(neighbor)
         return neighbors
 
@@ -212,28 +235,29 @@ class OccupancyGrid:
 
         reachable_nodes = []
         for neighbor in self.get_node_neighbors(node):
-            if self.check_edge(node, neighbor, self.lidar.reach):
+            if self.check_edge(node, neighbor):
                 reachable_nodes.append(neighbor)
 
         return reachable_nodes
 
-    def update_graph(self, robot_current_state, minimum_distance):
+    def update_graph(self, robot_current_state):
 
         self.position = robot_current_state[0:2]
         self.enlarge_graph_nodes_if_needed()
 
-        nodes_to_check_arcs = []
-        nearest_node = Utilities.get_nearest_node(self.grid, self.position)
-        for i in range(-2 * self.number_nodes_margin, 2 * self.number_nodes_margin + 1):
-            for j in range(-2 * self.number_nodes_margin, self.number_nodes_margin + 1):
-                node = (nearest_node[0] + i * self.node_distance, nearest_node[1] + j * self.node_distance)
-                if node in self.graph_nodes:
-                    node_value = self.check_node(node, minimum_distance)
-                    self.graph_nodes[node] = node_value
-                    if node_value == 2:
-                        nodes_to_check_arcs.append(node)
+        # # nodes_to_check_arcs = []
+        # nearest_node = Utilities.get_nearest_node(self.grid, self.position)
+        # for i in range(-2 * self.number_nodes_margin, 2 * self.number_nodes_margin + 1):
+        #     for j in range(-2 * self.number_nodes_margin, self.number_nodes_margin + 1):
+        #         node = (nearest_node[0] + i * self.nodes_distance, nearest_node[1] + j * self.nodes_distance)
+        #         if node in self.graph_nodes:
+        #             node_value = self.check_node(node)
+        #             self.graph_nodes[node] = node_value
+        #             if node_value == 2:
+        #                 nodes_to_check_arcs.append(node)
 
-        for node in nodes_to_check_arcs:
+        # for node in nodes_to_check_arcs:
+        for node in self.graph_nodes:
             reachable_neighbor_nodes = self.get_reachable_neighbor_nodes(node)
             self.graph[node] = reachable_neighbor_nodes
 
@@ -276,3 +300,71 @@ class OccupancyGrid:
         plt.ylim([plot_min_y - 10, plot_max_y + 10])
         plt.gca().set_aspect('equal', adjustable='box')
         plt.show()
+
+
+from src.LiDAR import LiDAR
+
+if __name__ == "__main__":
+    lidar = LiDAR()
+    cell_dim = 1
+    initial_state = (0, 0, 0)
+    nodes_distance_in_cells = 1
+    minimum_distance_nodes_obstacles = 1
+
+    grid = OccupancyGrid(lidar, cell_dim, initial_state, nodes_distance_in_cells, minimum_distance_nodes_obstacles)
+
+    grid.grid = {
+        (0, 0): 2,
+        (1, 0): 2,
+        (2, 0): 2,
+        (3, 0): 2,
+        (4, 0): 2,
+        (0, 1): 2,
+        (1, 1): 2,
+        (2, 1): 2,
+        (3, 1): 2,
+        (4, 1): 2,
+        (0, 2): 2,
+        (1, 2): 2,
+        (2, 2): 2,
+        (3, 2): 2,
+        (4, 2): 2,
+        (0, 3): 2,
+        (1, 3): 2,
+        (2, 3): 2,
+        (3, 3): 2,
+        (4, 3): 2,
+        (0, 4): 2,
+        (1, 4): 2,
+        (2, 4): 2,
+        (3, 4): 2,
+        (4, 4): 2
+    }
+
+    grid.graph_nodes = {
+        (1, 1): 2,
+        (1, 2): 2,
+        (1, 3): 2,
+        (1, 4): 2,
+        (2, 1): 2,
+        (2, 2): 2,
+        (2, 3): 2,
+        (2, 4): 2,
+        (3, 1): 2,
+        (3, 2): 2,
+        (3, 3): 2,
+        (3, 4): 2,
+        (4, 1): 2,
+        (4, 2): 2,
+        (4, 3): 2,
+        (4, 4): 2
+
+    }
+
+    for node in grid.graph_nodes:
+        reachable_neighbor_nodes = grid.get_reachable_neighbor_nodes(node)
+        print(grid.get_node_neighbors(node))
+        print(node, reachable_neighbor_nodes)
+        print("\n\n")
+
+    print(grid.get_cells_line_connecting_points((0.1, 0.3), (20.2, 2.1)))

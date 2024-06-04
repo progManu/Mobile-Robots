@@ -77,7 +77,7 @@ class Robot:
         self.plots_margins = plots_margins
         self.controller = Controller(kp=0.5, ki=0, kd=0.1)
         lidar = LiDAR(angle_interval=[0, 2 * math.pi],
-                      obstacles=self.in_map_obstacles_segments+self.map_border_segments, n=lidar_n, reach=lidar_reach)
+                      obstacles=self.in_map_obstacles_segments + self.map_border_segments, n=lidar_n, reach=lidar_reach)
         self.obstacle_avoidance = ObstacleAvoidance(safety_distance=safety_distance, lidar=lidar, k=10)
 
     def set_exp_title(self, title: str):
@@ -411,7 +411,9 @@ class Robot:
         self.x_movement[0] = self.initial_state  # The first row of the matrix represents the initial conditions
 
         self.occupancy_grid = OccupancyGrid(cell_dim=1, initial_state=self.initial_state,
-                                            lidar=self.obstacle_avoidance.lidar)
+                                            lidar=self.obstacle_avoidance.lidar, nodes_distance_in_cells=5,
+                                            minimum_distance_nodes_obstacles=self.robot_radius + self.epsilon_collisions
+                                            )
 
         # Init an array that will contain the input sequence
         self.u_sequence = np.full((self.simulation_steps, input_dim), np.nan)

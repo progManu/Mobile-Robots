@@ -17,7 +17,7 @@ import src.Utilities as Utilities
 from src.OccupancyGrid import OccupancyGrid
 
 
-class Robot:
+class Autobot:
     matplotlib_inline.backend_inline.set_matplotlib_formats('svg')
     matplotlib.rcParams.update({'font.size': 7})
     matplotlib.rcParams['animation.embed_limit'] = 100  # MB
@@ -77,7 +77,7 @@ class Robot:
         self.plots_margins = plots_margins
         self.controller = Controller(kp=0.5, ki=0, kd=0.1)
         lidar = LiDAR(angle_interval=[0, 2 * math.pi],
-                      obstacles=self.in_map_obstacles_segments+self.map_border_segments, n=lidar_n, reach=lidar_reach)
+                      obstacles=self.in_map_obstacles_segments + self.map_border_segments, n=lidar_n, reach=lidar_reach)
         self.obstacle_avoidance = ObstacleAvoidance(safety_distance=safety_distance, lidar=lidar, k=10)
 
     def set_exp_title(self, title: str):
@@ -411,7 +411,9 @@ class Robot:
         self.x_movement[0] = self.initial_state  # The first row of the matrix represents the initial conditions
 
         self.occupancy_grid = OccupancyGrid(cell_dim=1, initial_state=self.initial_state,
-                                            lidar=self.obstacle_avoidance.lidar)
+                                            lidar=self.obstacle_avoidance.lidar, nodes_distance_in_cells=3,
+                                            minimum_distance_nodes_obstacles=self.robot_radius + self.epsilon_collisions
+                                            )
 
         # Init an array that will contain the input sequence
         self.u_sequence = np.full((self.simulation_steps, input_dim), np.nan)
@@ -424,8 +426,6 @@ class Robot:
         self.target_node_movement = []
         self.final_times_index = self.simulation_steps - 1
 
-        self.occupancy_grid.set_grid()
-
         # Iterate over the number of steps
         for i in range(self.simulation_steps):
 
@@ -436,6 +436,7 @@ class Robot:
             target_position = self.nodes_path[current_path_index]
 
             self.occupancy_grid.update_grid(self.state)
+            self.occupancy_grid.update_graph(self.state)
 
             target_distance = np.linalg.norm(target_position - current_position)
             if target_distance < self.target_tolerance:
@@ -569,3 +570,17 @@ class Robot:
 
         # Return the animation that has to be displayed
         self.animation = anim
+
+
+if __name__ == '__main__':
+    polygons_vertexes_list = [[(10.5, 38.5), (10.5, 42.5), (49.5, 42.5), (49.5, 38.5)],
+                              [(0.5, 23.5), (0.5, 28.5), (40, 23.5), (40, 28.5)],
+                              [(10.5, 8.5), (10.5, 14.5), (49.5, 14.5), (49.5, 8.5)]]
+    robot_adaptive_graph = Autobot(in_map_obstacle_vertexes_list=polygons_vertexes_list, lidar_n=101, cell_dim=1)
+    robot_adaptive_graph.set_exp_title("Prova")
+    # robot_adaptive_graph.set_pd_controller(kp=0.5,kd=0.1) #kp=0.5,kd=0.1
+    robot_adaptive_graph.simulation_setup(initial_state=[45, 25, 0], final_position=[45, 45], cruise_velocity=10,
+                                          final_time=2)  # final_time = 15
+    robot_adaptive_graph.simulate()
+    graph = robot_adaptive_graph.occupancy_grid.graph_nodes
+    print(graph)
