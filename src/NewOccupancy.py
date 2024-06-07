@@ -10,7 +10,7 @@ class CellInfo(IntEnum):
     FRONTIER = 1,
     FREE = 2
 
-class BetterOccupancy:
+class NewOccupancy:
     def __init__(self, pos, cell_dim=2, lidar_reach=10):
         if cell_dim % 2 == 0:
             self.cell_dim = cell_dim

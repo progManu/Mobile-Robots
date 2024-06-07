@@ -14,7 +14,7 @@ from src.Controller import *
 from src.ObstacleAvoidance import *
 from src.LiDAR import *
 import src.Utilities as Utilities
-from src.BetterOccupancy import *
+from src.NewOccupancy import *
 from src.OccupancyGrid import *
 
 
@@ -462,7 +462,7 @@ class Autobot:
                                             lidar=self.obstacle_avoidance.lidar, nodes_distance_in_cells=3,
                                             minimum_distance_nodes_obstacles=self.robot_radius + self.epsilon_collisions
                                             )
-        self.better_occupancy = BetterOccupancy(pos=tuple(self.initial_state[:2]), lidar_reach=self.lidar.reach)
+        self.better_occupancy = NewOccupancy(pos=tuple(self.initial_state[:2]), lidar_reach=self.lidar.reach)
 
         self.better_occupancy.setup_grid(pos=tuple(self.initial_state[:2]), initial_grid_size=200)
 
