@@ -14,7 +14,8 @@ from src.Controller import *
 from src.ObstacleAvoidance import *
 from src.LiDAR import *
 import src.Utilities as Utilities
-from src.OccupancyGrid import OccupancyGrid
+from src.BetterOccupancy import *
+from src.OccupancyGrid import *
 
 
 class Autobot:
@@ -24,7 +25,7 @@ class Autobot:
 
     def __init__(self, robot_radius=1, wheels_distance=0.8, map_dimensions=None, epsilon_collisions=0.1,
                  target_tolerance=2, in_map_obstacle_vertexes_list=None, exp_title="NoName", plots_margins=10,
-                 safety_distance=2, lidar_n=9, lidar_reach=10, cell_dim=1):
+                 safety_distance=2, lidar_n=9, lidar_reach=10, cell_dim=2):
         """
         Initialize the robot.
 
@@ -62,6 +63,8 @@ class Autobot:
         self.animation = None
         self.graph = None
         self.occupancy_grid = None
+        self.better_occupancy = None
+
         if in_map_obstacle_vertexes_list is None:
             in_map_obstacle_vertexes_list = []
         if map_dimensions is None:
@@ -76,9 +79,9 @@ class Autobot:
         self.title = exp_title
         self.plots_margins = plots_margins
         self.controller = Controller(kp=0.5, ki=0, kd=0.1)
-        lidar = LiDAR(angle_interval=[0, 2 * math.pi],
+        self.lidar = LiDAR(angle_interval=[0, 2 * math.pi],
                       obstacles=self.in_map_obstacles_segments + self.map_border_segments, n=lidar_n, reach=lidar_reach)
-        self.obstacle_avoidance = ObstacleAvoidance(safety_distance=safety_distance, lidar=lidar, k=10)
+        self.obstacle_avoidance = ObstacleAvoidance(safety_distance=safety_distance, lidar=self.lidar, k=10)
 
     def set_exp_title(self, title: str):
         self.title = title
@@ -128,6 +131,7 @@ class Autobot:
 
     def get_polygons(self):
         return self.in_map_polygons
+
 
     def simulation_setup(self, initial_state=None, final_position=None, final_time=10, sampling_time=0.01,
                          cell_dimension=None, cruise_velocity=3):
@@ -401,11 +405,55 @@ class Autobot:
         self.controller = Controller(kp=kp, ki=0, kd=kd)
         self.simulate()
         return self.average_target_node_distance()
-
+    
+#     def get_ten_furthest_nodes(self, pos):
+#         nodes = self.occupancy_grid.graph.nodes()
+#         nodes = np.array(nodes)
+#         node_x_dim, node_y_dim = nodes.shape
+# 
+#         pos = np.array(pos)
+# 
+#         start_pos = np.repeat(pos.reshape(1, len(pos)), node_x_dim)
+# 
+#         diff = nodes - start_pos
+# 
+#         distances = np.linalg.norm(diff, axis=1)
+# 
+#         sorted_distances = np.sort(distances)
+# 
+#         top_10_nodes = sorted_distances[len(sorted_distances) - 3: len(sorted_distances)]
+# 
+#         top_10_indices = [np.where(distances == top_10_node) for top_10_node in top_10_nodes]
+# 
+#         top_10_indices = np.array(top_10_indices)
+# 
+#         return nodes[top_10_indices]
+#     
+#     def get_node_closer_to_finish(self, pos):
+#         nodes = self.get_ten_furthest_nodes(pos=pos)
+#         node_x_dim, node_y_dim = nodes.shape
+# 
+#         pos = np.array(self.final_position)
+# 
+#         pos = pos.reshape(1, len(pos))
+# 
+#         print(pos)
+# 
+#         start_pos = np.repeat(pos, node_x_dim)
+# 
+#         print(start_pos)
+# 
+#         diff = nodes - start_pos
+# 
+#         distances = np.linalg.norm(diff, axis=1)
+# 
+#         min_idx = np.argmin(distances)
+# 
+#         return tuple(nodes[min_idx])
+    
     def simulator(self):
         state_dim = len(self.initial_state)
         input_dim = 2
-
         # Init the matrix that will contain the state movement
         self.x_movement = np.full((self.simulation_steps + 1, state_dim), np.nan)
         self.x_movement[0] = self.initial_state  # The first row of the matrix represents the initial conditions
@@ -414,6 +462,9 @@ class Autobot:
                                             lidar=self.obstacle_avoidance.lidar, nodes_distance_in_cells=3,
                                             minimum_distance_nodes_obstacles=self.robot_radius + self.epsilon_collisions
                                             )
+        self.better_occupancy = BetterOccupancy(pos=tuple(self.initial_state[:2]), lidar_reach=self.lidar.reach)
+
+        self.better_occupancy.setup_grid(pos=tuple(self.initial_state[:2]), initial_grid_size=200)
 
         # Init an array that will contain the input sequence
         self.u_sequence = np.full((self.simulation_steps, input_dim), np.nan)
@@ -421,19 +472,22 @@ class Autobot:
         self.set_graph_nodes()
         self.create_graph_from_nodes()
         self.find_path()
-        current_path_index = 0
 
+        current_path_index = 0
         self.target_node_movement = []
         self.final_times_index = self.simulation_steps - 1
 
         # Iterate over the number of steps
         for i in range(self.simulation_steps):
-
             # Get the current state
             self.state = self.x_movement[i]
             current_position = self.state[:2]
             current_heading = self.state[2]
             target_position = self.nodes_path[current_path_index]
+
+            measure = self.lidar.measure(position=current_position, heading_angle=current_heading)
+            self.better_occupancy.update_grid(pos=tuple(current_position), measure=measure)
+            self.better_occupancy.update_graph()
 
             self.occupancy_grid.update_grid(self.state)
             self.occupancy_grid.update_graph(self.state)
@@ -447,36 +501,28 @@ class Autobot:
                 current_path_index += 1
                 target_position = self.nodes_path[current_path_index]
                 # If to close to the node, update it. This line is needed to prevent errors at initial time
-
             self.target_node_movement.append(target_position)
             target_heading = np.arctan2(target_position[1] - current_position[1],
                                         target_position[0] - current_position[0])
-
             delta_velocity = self.controller.advanced_control(target=target_heading, current=current_heading,
                                                               dt=self.sampling_time,
                                                               cruise_velocity=self.cruise_velocity)
-
             # Obstacle avoidance contribution
             obstacle_avoidance_delta = (0, 0)
             obstacle_detected, obstacle_distance = self.obstacle_avoidance.check_close_obstacles(self.x_movement[i])
             if obstacle_detected:
                 obstacle_avoidance_delta = self.obstacle_avoidance.compute_contribution(obstacle_distance,
                                                                                         self.x_movement[i])
-
             # Compute the current input
             current_input = [self.cruise_velocity + delta_velocity[0] + obstacle_avoidance_delta[0],
                              self.cruise_velocity + delta_velocity[1] + obstacle_avoidance_delta[1]]
-
             # Check if the robot is too close to maneuver, stop to avoid collisions
             if self.obstacle_avoidance.distance_is_critical(self.x_movement[i]):
                 current_input = [0, 0]
                 print('Robot too close to an obstacle!')
-
             self.u_sequence[i] = current_input
-
             # Define the time step associated to the current input
             time_interval = [self.times[i], self.times[i + 1]]
-
             # Compute the state evolution keeping the final state, i.e. the state at time times[i+1]
             next_state = odeint(self.differentialRobot_model, self.state, time_interval, args=(current_input,))[1]
             # Don't update state when collisions are detected
@@ -487,7 +533,6 @@ class Autobot:
                     "reasons!\n\n")
                 self.final_times_index = i
                 break
-
             self.x_movement[i + 1] = next_state
 
     def make_animation(self):  # "obstacles" is a variable that contains

@@ -2,6 +2,7 @@ import math
 import numpy as np
 from shapely.geometry import LineString
 import concurrent.futures
+import matplotlib.pyplot as plt
 
 class LiDAR:
     def __init__(self, angle_interval=None, obstacles=None, n=9, reach=10):
@@ -60,6 +61,31 @@ class LiDAR:
             measurements[angle] = (measurement, intersection_point)
 
         return measurements
+    
+    def plot_robot_and_rays(self, pos, measure):
+        fig, ax = plt.subplots()
+
+        coord = np.empty([2, len(measure)])
+
+        for i, angle in enumerate(measure.keys()):
+            dist, collision_pos = measure[angle]
+            if dist is None:
+                coord[0, i] = pos[0] + self.reach*np.cos(angle)
+                coord[1, i] = pos[1] + self.reach*np.sin(angle)
+            else:
+                coord[0, i] = pos[0] + dist*np.cos(angle)
+                coord[1, i] = pos[1] + dist*np.sin(angle)
+            
+            ax.plot([pos[0], coord[0, i]], [pos[1], coord[1, i]])
+        
+        print(coord)
+        
+        ax.plot(coord[0, :], coord[1, :], 'o')
+
+        return fig
+        
+
+
 
     # Multithreaded version of the measure function, it seems to be slower than the sequential version...
     # def measure(self, position, heading_angle):
